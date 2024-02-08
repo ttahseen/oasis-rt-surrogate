@@ -1,4 +1,4 @@
-# ML-GCM
+# OASIS-RT Surrogate
 
 ## About
 
