@@ -147,6 +147,7 @@ class DataProcesser:
         input_data = np.zeros(shape=(nt, ncol, nlay, nvars))
         auxiliary_data = np.empty(shape=(nt, ncol, nauxvars))
         target_data = np.empty(shape=(nt, ncol, nlev, ntargets))
+        cosz = np.empty(shape=(nt, ncol))
 
         # Populate numpy array with data
         for t in range(len(timesteps)):
@@ -165,14 +166,14 @@ class DataProcesser:
             for tv, tvar in enumerate(target_vars):
                 target_data[t, :, :, tv] = np.reshape(dt[tvar], newshape=(ncol, nlev))
 
+            cosz[t, :] = np.reshape(dt["cosz"], newshape=(ncol,))
+
         if resample_data:
             # TODO: Replace this code with more robust sampling method
             new_input_data = np.zeros(shape=(nt, 5000, nlay, nvars))
             new_auxiliary_data = np.empty(shape=(nt, 5000, nauxvars))
             new_target_data = np.empty(shape=(nt, 5000, nlev, ntargets))
-            for av, avar in enumerate(aux_vars):
-                if avar == "cosz":
-                    cosz = auxiliary_data[:, :, av]
+
             for t in range(nt):
                 nonzero_indices = np.where(cosz[t, :] != 0)[0][:5000]
                 indices = nonzero_indices
@@ -191,17 +192,13 @@ class DataProcesser:
                 input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v])
             elif var == "Rho":
                 input_data[:, :, :, v] = DataProcesser.power_law_scaling(input_data[:, :, :, v], 0.25)
-            elif "flux" in var:
-                var_scaling = input_data[:, :, -1, v, np.newaxis]
-                input_data[:, :, :, v] = input_data[:, :, :, v] / var_scaling
-    
 
-        for tv, tvar in enumerate(target_vars):
-            tvar_scaling = self.flux_scale_factor * cosz[:, np.newaxis, np.newaxis]
-            target_data[:, :, :, tv] = target_data[:, :, :, tv] / tvar_scaling
-            target_data = np.nan_to_num(
-                target_data
-            )  # TODO: WRITE THIS IN WAY TO AVOID NANS RATHER THAN JUST FILLING NANS AFTER
+        # Rescale targets
+        tvar_scaling = self.flux_scale_factor * cosz[:, :, np.newaxis, np.newaxis]
+        target_data[:, :, :, :] = target_data[:, :, :, :] / tvar_scaling
+        target_data = np.nan_to_num(
+            target_data
+        )  # TODO: WRITE THIS IN WAY TO AVOID NANS RATHER THAN JUST FILLING NANS AFTER
         
         input_data = np.delete(arr=input_data, obj=gap_start, axis=0)
         auxiliary_data = np.delete(arr=auxiliary_data, obj=gap_start, axis=0)
