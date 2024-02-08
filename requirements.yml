@@ -22,9 +22,9 @@ dependencies:
     - pip:
         - tensorflow==2.12.0
         - tensorflow_addons
-        - torch
-        - torchvision
-        - torchaudio
+        - torch==2.1.1
+        - torchvision==0.16.1
+        - torchaudio==2.1.1
         - tqdm
         - numba
         - pydot
