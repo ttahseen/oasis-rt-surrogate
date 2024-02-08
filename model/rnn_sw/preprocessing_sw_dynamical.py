@@ -24,6 +24,10 @@ class DataProcesser:
         self.vars_used = None
         self.aux_vars_used = None
 
+        # Load flux scale factor 
+        flux_scale_factor = np.loadtxt(os.path.join(datapath, "constants", 'flux_scale_factor.txt'))
+        self.flux_scale_factor = float(flux_scale_factor)
+
     @staticmethod
     def log_scaling(x: np.ndarray) -> np.ndarray:
         return np.log(x)
@@ -74,7 +78,6 @@ class DataProcesser:
             timestep = int(f.split("Venus_")[1].split(".h5")[0])
             output = DataProcesser.extract_data(os.path.join(path, f))
             output["timestep"] = timestep
-            # outputs.append(output)
             outputs[timestep] = output
 
         grid = DataProcesser.extract_data(os.path.join(path, "oasis_output_grid_Venus.h5"))
@@ -118,6 +121,14 @@ class DataProcesser:
         nauxvars = len(aux_vars)
         ntargets = len(target_vars)
 
+        print(f"Number of timesteps: {nt}", flush=True)
+        print(f"Number of atmospheric levels: {nlev}", flush=True)
+        print(f"Number of atmospheric layers: {nlay}", flush=True)
+        print(f"Number of atmospheric columns: {ncol}", flush=True)
+        print(f"Number of physical variables: {nvars}. These are: {input_vars}", flush=True)
+        print(f"Number of surface variables: {nauxvars}. These are: {aux_vars}", flush=True)
+        print(f"Number of target variables: {ntargets}. These are: {target_vars}", flush=True)
+
         # Handling data from non-consecutive timesteps
         timesteps = sorted(data.keys())
 
@@ -128,12 +139,14 @@ class DataProcesser:
                 gap_start.append(ix)
             else:
                 npairs += 1
+        # Check if there are non-consecutive timesteps
+        if len(gap_start) > 0:
+            print(f"Non-consecutive timesteps found: {gap_start}", flush=True)
 
         # Initialise numpy array
         input_data = np.zeros(shape=(nt, ncol, nlay, nvars))
         auxiliary_data = np.empty(shape=(nt, ncol, nauxvars))
         target_data = np.empty(shape=(nt, ncol, nlev, ntargets))
-        altitudeh_data = np.empty(shape=(nt, ncol, nlev))
 
         # Populate numpy array with data
         for t in range(len(timesteps)):
@@ -157,18 +170,13 @@ class DataProcesser:
             new_input_data = np.zeros(shape=(nt, 5000, nlay, nvars))
             new_auxiliary_data = np.empty(shape=(nt, 5000, nauxvars))
             new_target_data = np.empty(shape=(nt, 5000, nlev, ntargets))
-            new_altitudeh_data = np.empty(shape=(nt, 5000, nlev))
             for av, avar in enumerate(aux_vars):
                 if avar == "cosz":
                     cosz = auxiliary_data[:, :, av]
             for t in range(nt):
-          
-                # zero_indices = np.where(cosz[t, :] == 0)[0][:5]
-                # nonzero_indices = np.where(cosz[t, :] != 0)[0][:4995]
                 nonzero_indices = np.where(cosz[t, :] != 0)[0][:5000]
-                # indices = np.concatenate((zero_indices, nonzero_indices))
                 indices = nonzero_indices
-                print("Indices shape:", indices.shape)
+
                 new_input_data[t, :, :, :] = input_data[t, indices, :, :]
                 new_auxiliary_data[t, :, :] = auxiliary_data[t, indices, :]
                 new_target_data[t, :, :, :] = target_data[t, indices, :, :]
@@ -176,7 +184,6 @@ class DataProcesser:
             input_data = new_input_data
             auxiliary_data = new_auxiliary_data
             target_data = new_target_data
-            altitudeh_data = new_altitudeh_data
 
         # Rescale inputs
         for v, var in enumerate(input_vars):
@@ -190,49 +197,24 @@ class DataProcesser:
     
 
         for tv, tvar in enumerate(target_vars):
-            tvar_scaling = target_data[:, :, -1, tv, np.newaxis]
+            tvar_scaling = self.flux_scale_factor * cosz[:, np.newaxis, np.newaxis]
             target_data[:, :, :, tv] = target_data[:, :, :, tv] / tvar_scaling
             target_data = np.nan_to_num(
                 target_data
             )  # TODO: WRITE THIS IN WAY TO AVOID NANS RATHER THAN JUST FILLING NANS AFTER
-            print(target_data.shape)
-            print(np.sum(target_data == 0))
-
-        # Add altitude as vector input
-
-        altitudeh_data = np.expand_dims(grid["Altitudeh"], axis=0)
-        altitudeh_data = np.repeat(altitudeh_data, repeats=ncol, axis=0)
-        altitudeh_data = np.expand_dims(altitudeh_data, axis=0)
-        altitudeh_data = np.repeat(altitudeh_data, repeats=nt, axis=0)
-
-        altitude_data = np.expand_dims(grid["Altitude"], axis=0)
-        print("Unscaled altitudes: ", altitude_data)
-        altitude_data = altitude_data / altitude_data.max()
-        print("Rescaled altitudes: ", altitude_data)
-        altitude_data = np.repeat(altitude_data, repeats=5000, axis=0)
-        altitude_data = np.expand_dims(altitude_data, axis=0)
-        altitude_data = np.repeat(altitude_data, repeats=nt, axis=0)
         
         input_data = np.delete(arr=input_data, obj=gap_start, axis=0)
         auxiliary_data = np.delete(arr=auxiliary_data, obj=gap_start, axis=0)
         target_data = np.delete(arr=target_data, obj=gap_start, axis=0)
-        altitudeh_data = np.delete(arr=altitudeh_data, obj=gap_start, axis=0)
-        altitude_data = np.delete(arr=altitude_data, obj=gap_start, axis=0)
 
-        # Add altitude to input
-        input_data = np.concatenate((input_data, altitude_data[:, :, :, None]), axis=3)
-
-        print("==========INPUT_DATA===========", input_data.shape)
-       	print("==========ALTITUDE_DATA===========", altitude_data.shape)
-        input_data, auxiliary_data, target_data, altitudeh_data = [
+        input_data, auxiliary_data, target_data = [
             torch.from_numpy(dataset).type(torch.float)
-            for dataset in (input_data, auxiliary_data, target_data, altitudeh_data)
+            for dataset in (input_data, auxiliary_data, target_data)
         ]
 
         self.inputs = torch.flatten(input_data[:, :, :, :], start_dim=0, end_dim=1)
         self.aux_inputs = torch.flatten(auxiliary_data[:, :, :], start_dim=0, end_dim=1)
         self.targets = torch.flatten(target_data[:, :, :, :], start_dim=0, end_dim=1)
-        self.altitudeh = torch.flatten(altitudeh_data[:, :, :], start_dim=0, end_dim=1)
 
     def test_train_split(self, savepath, training_frac: float = 0.7, val_frac: float = 0.15):
         """
@@ -255,30 +237,26 @@ class DataProcesser:
         inputs = self.inputs
         aux_inputs = self.aux_inputs
         targets = self.targets
-        altitudeh = self.altitudeh
 
         # Randomly shuffle batches
+        torch.manual_seed(42)
         shuffle_ix = torch.randperm(inputs.size()[0])
         inputs = inputs[shuffle_ix, :, :]
         targets = targets[shuffle_ix, :, :]
-        altitudeh = altitudeh[shuffle_ix, :]
 
-        train_x, train_y, train_altitudeh = (
+        train_x, train_y = (
             inputs[:num_train_examples, :, :],
-            targets[:num_train_examples, :, :],
-            altitudeh[:num_train_examples, :],
+            targets[:num_train_examples, :, :]
         )
 
-        val_x, val_y, val_altitudeh = (
+        val_x, val_y = (
             inputs[num_train_examples : num_train_examples + num_val_examples, :, :],
-            targets[num_train_examples : num_train_examples + num_val_examples, :, :],
-            altitudeh[num_train_examples : num_train_examples + num_val_examples, :],
+            targets[num_train_examples : num_train_examples + num_val_examples, :, :]
         )
 
-        test_x, test_y, test_altitudeh = (
+        test_x, test_y = (
             inputs[num_train_examples + num_val_examples :, :, :],
-            targets[num_train_examples + num_val_examples :, :, :],
-            altitudeh[num_train_examples + num_val_examples :, :],
+            targets[num_train_examples + num_val_examples :, :, :]
         )
 
         with open(os.path.join(savepath, "train_x.pt"), "wb") as f:
@@ -314,19 +292,11 @@ class DataProcesser:
             with open(os.path.join(savepath, "val_aux_x.pt"), "wb") as f:
                 torch.save(val_aux_x, f)
 
-        with open(os.path.join(savepath, "train_altitudeh.pt"), "wb") as f:
-            torch.save(train_altitudeh, f)
-
-        with open(os.path.join(savepath, "test_altitudeh.pt"), "wb") as f:
-            torch.save(test_altitudeh, f)
-
-        with open(os.path.join(savepath, "val_altitudeh.pt"), "wb") as f:
-            torch.save(val_altitudeh, f)
-
     def process(self):
         print("=============LOADING DATA=============")
 
-        data, grid = self.load_data(self.datapath)
+        raw_data_path = os.path.join(self.datapath, "raw_data")
+        data, grid = self.load_data(raw_data_path)
 
         print("============PROCESSING DATA===========")
         self.format_data(data, grid)
