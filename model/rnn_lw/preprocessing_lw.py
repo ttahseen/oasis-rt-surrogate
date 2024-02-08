@@ -12,6 +12,7 @@ from torch import Tensor
 
 from vars_lw import *
 
+
 ########################### DATA PROCESSING ###########################
 
 
@@ -233,6 +234,7 @@ class DataProcesser:
         altitudeh = self.altitudeh
 
         # Randomly shuffle batches
+        torch.manual_seed(42)
         shuffle_ix = torch.randperm(inputs.size()[0])
         inputs = inputs[shuffle_ix, :, :]
         targets = targets[shuffle_ix, :, :]
@@ -321,7 +323,6 @@ class DataProcesser:
 if __name__ == "__main__":
     processer = DataProcesser(
         datapath=DATAPATH,
-        data_vars=VARS_3D,
         input_vars=INPUT_VARS,
         target_vars=TARGET_VARS,
         aux_vars=AUX_VARS,
