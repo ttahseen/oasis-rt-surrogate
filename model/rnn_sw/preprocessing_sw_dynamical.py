@@ -4,6 +4,7 @@ format ready for model training.
 """
 
 import os
+import sys
 import h5py
 import torch
 import numpy as np
@@ -173,7 +174,7 @@ class DataProcesser:
             new_input_data = np.zeros(shape=(nt, 5000, nlay, nvars))
             new_auxiliary_data = np.empty(shape=(nt, 5000, nauxvars))
             new_target_data = np.empty(shape=(nt, 5000, nlev, ntargets))
-
+            new_cosz = np.empty(shape=(nt, 5000))
             for t in range(nt):
                 nonzero_indices = np.where(cosz[t, :] != 0)[0][:5000]
                 indices = nonzero_indices
@@ -181,10 +182,12 @@ class DataProcesser:
                 new_input_data[t, :, :, :] = input_data[t, indices, :, :]
                 new_auxiliary_data[t, :, :] = auxiliary_data[t, indices, :]
                 new_target_data[t, :, :, :] = target_data[t, indices, :, :]
+                new_cosz[t, :] = cosz[t, indices]
 
             input_data = new_input_data
             auxiliary_data = new_auxiliary_data
             target_data = new_target_data
+            cosz = new_cosz
 
         # Rescale inputs
         for v, var in enumerate(input_vars):
@@ -298,7 +301,7 @@ class DataProcesser:
         print("============PROCESSING DATA===========")
         self.format_data(data, grid)
 
-        formatted_data_path = os.path.join(self.datapath, "rnn_sw", "dynamical")
+        formatted_data_path = os.path.join(self.datapath, "preprocessed_data", "rnn_sw", "dynamical")
         if not os.path.exists(formatted_data_path):
             os.makedirs(formatted_data_path)
 
