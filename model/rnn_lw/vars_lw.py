@@ -12,7 +12,7 @@ INPUT_VARS = [
     "Pressure",
 ]
 
-AUX_VARS = ["cosz", "flx_grd", "alb_surf_lw"]
+AUX_VARS = ["sTemperature", "alb_surf_lw"]
 
 TARGET_VARS = [
     "fnet_dn_lw_h",

@@ -4,28 +4,31 @@ format ready for model training.
 """
 
 import os
+import sys
 import h5py
 import torch
 import numpy as np
 from tqdm import tqdm
 from torch import Tensor
 
-from vars_lw import *
-
+from model.rnn_lw.vars_lw import *
 
 ########################### DATA PROCESSING ###########################
 
 
 class DataProcesser:
-    def __init__(self, datapath, data_vars, input_vars, target_vars, aux_vars=None):
+    def __init__(self, datapath, input_vars, target_vars, aux_vars=None):
         self.datapath = datapath
-        self.data_vars = data_vars
         self.aux_vars = aux_vars  # Auxiliary vars which are not of same dimension as input vars
         self.input_vars = input_vars  # Variables which will be main inputs to model
         self.target_vars = target_vars  # Variables which will be outputs of model
         self.vars_used = None
         self.aux_vars_used = None
 
+        # Load flux scale factor 
+        flux_scale_factors = np.loadtxt(os.path.join(datapath, "constants", 'lw_flux_scaling_factors.txt'), unpack=True)
+        self.flux_scale_factors = flux_scale_factors
+        
     @staticmethod
     def log_scaling(x: np.ndarray) -> np.ndarray:
         return np.log(x)
@@ -76,7 +79,6 @@ class DataProcesser:
             timestep = int(f.split("Venus_")[1].split(".h5")[0])
             output = DataProcesser.extract_data(os.path.join(path, f))
             output["timestep"] = timestep
-            # outputs.append(output)
             outputs[timestep] = output
 
         grid = DataProcesser.extract_data(os.path.join(path, "oasis_output_grid_Venus.h5"))
@@ -120,6 +122,14 @@ class DataProcesser:
         nauxvars = len(aux_vars)
         ntargets = len(target_vars)
 
+        print(f"Number of timesteps: {nt}", flush=True)
+        print(f"Number of atmospheric levels: {nlev}", flush=True)
+        print(f"Number of atmospheric layers: {nlay}", flush=True)
+        print(f"Number of atmospheric columns: {ncol}", flush=True)
+        print(f"Number of physical variables: {nvars}. These are: {input_vars}", flush=True)
+        print(f"Number of surface variables: {nauxvars}. These are: {aux_vars}", flush=True)
+        print(f"Number of target variables: {ntargets}. These are: {target_vars}", flush=True)
+
         # Handling data from non-consecutive timesteps
         timesteps = sorted(data.keys())
 
@@ -130,12 +140,18 @@ class DataProcesser:
                 gap_start.append(ix)
             else:
                 npairs += 1
+        # Check if there are non-consecutive timesteps
+        if len(gap_start) > 0:
+            print(f"Non-consecutive timesteps found: {gap_start}", flush=True)
 
         # Initialise numpy array
         input_data = np.zeros(shape=(nt, ncol, nlay, nvars))
         auxiliary_data = np.empty(shape=(nt, ncol, nauxvars))
         target_data = np.empty(shape=(nt, ncol, nlev, ntargets))
-        altitudeh_data = np.empty(shape=(nt, ncol, nlev))
+        cosz = np.empty(shape=(nt, ncol))
+        sTemperature = np.empty(shape=(nt, ncol))
+        simulation_time = np.empty(shape=(nt, ncol))
+        lonlat = np.empty(shape=(nt, ncol, 2))
 
         # Populate numpy array with data
         for t in range(len(timesteps)):
@@ -154,61 +170,41 @@ class DataProcesser:
             for tv, tvar in enumerate(target_vars):
                 target_data[t, :, :, tv] = np.reshape(dt[tvar], newshape=(ncol, nlev))
 
+            cosz[t, :] = np.reshape(dt["cosz"], newshape=(ncol,))
+            sTemperature[t, :] = np.reshape(dt["sTemperature"], newshape=(ncol,))
+            simulation_time[t, :] = np.full(ncol, dt["simulation_time"])
+            lonlat[t, :, :] = np.reshape(grid['lonlat'], newshape=(ncol, 2))
+
         # Rescale inputs
         for v, var in enumerate(input_vars):
             if var in ["Temperature", "Pressure"]:
                 input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v])
             elif var == "Rho":
                 input_data[:, :, :, v] = DataProcesser.power_law_scaling(input_data[:, :, :, v], 0.25)
-            elif "flux" in var:
-                var_scaling = input_data[:, :, -1, v, np.newaxis]
-                input_data[:, :, :, v] = input_data[:, :, :, v] / var_scaling
-    
 
-        for tv, tvar in enumerate(target_vars):
-            tvar_scaling = target_data[:, :, 0, tv, np.newaxis]
-            target_data[:, :, :, tv] = target_data[:, :, :, tv] / tvar_scaling
-            target_data = np.nan_to_num(
-                target_data
-            )  # TODO: WRITE THIS IN WAY TO AVOID NANS RATHER THAN JUST FILLING NANS AFTER
-            print(target_data.shape)
-            print(np.sum(target_data == 0))
-
-        # Add altitude as vector input
-
-        altitudeh_data = np.expand_dims(grid["Altitudeh"], axis=0)
-        altitudeh_data = np.repeat(altitudeh_data, repeats=ncol, axis=0)
-        altitudeh_data = np.expand_dims(altitudeh_data, axis=0)
-        altitudeh_data = np.repeat(altitudeh_data, repeats=nt, axis=0)
-
-        altitude_data = np.expand_dims(grid["Altitude"], axis=0)
-        print("Unscaled altitudes: ", altitude_data)
-        altitude_data = altitude_data / altitude_data.max()
-        print("Rescaled altitudes: ", altitude_data)
-        altitude_data = np.repeat(altitude_data, repeats=ncol, axis=0)
-        altitude_data = np.expand_dims(altitude_data, axis=0)
-        altitude_data = np.repeat(altitude_data, repeats=nt, axis=0)
+        # Rescale targets
+        tvar_scaling = self.flux_scale_factors[0] * sTemperature[:, :, np.newaxis, np.newaxis] + self.flux_scale_factors[1]
+        target_data[:, :, :, :] = target_data[:, :, :, :] / tvar_scaling
+        target_data = np.nan_to_num(
+            target_data
+        )  # TODO: WRITE THIS IN WAY TO AVOID NANS RATHER THAN JUST FILLING NANS AFTER
         
         input_data = np.delete(arr=input_data, obj=gap_start, axis=0)
         auxiliary_data = np.delete(arr=auxiliary_data, obj=gap_start, axis=0)
         target_data = np.delete(arr=target_data, obj=gap_start, axis=0)
-        altitudeh_data = np.delete(arr=altitudeh_data, obj=gap_start, axis=0)
-        altitude_data = np.delete(arr=altitude_data, obj=gap_start, axis=0)
 
-        # Add altitude to input
-        input_data = np.concatenate((input_data, altitude_data[:, :, :, None]), axis=3)
-
-        print("==========INPUT_DATA===========", input_data.shape)
-       	print("==========ALTITUDE_DATA===========", altitude_data.shape)
-        input_data, auxiliary_data, target_data, altitudeh_data = [
+        input_data, auxiliary_data, target_data, cosz, sTemperature, lonlat, simulation_time = [
             torch.from_numpy(dataset).type(torch.float)
-            for dataset in (input_data, auxiliary_data, target_data, altitudeh_data)
+            for dataset in (input_data, auxiliary_data, target_data, cosz, sTemperature, lonlat, simulation_time)
         ]
 
         self.inputs = torch.flatten(input_data[:, :, :, :], start_dim=0, end_dim=1)
         self.aux_inputs = torch.flatten(auxiliary_data[:, :, :], start_dim=0, end_dim=1)
         self.targets = torch.flatten(target_data[:, :, :, :], start_dim=0, end_dim=1)
-        self.altitudeh = torch.flatten(altitudeh_data[:, :, :], start_dim=0, end_dim=1)
+        self.cosz = torch.flatten(cosz[:, :], start_dim=0, end_dim=1)
+        self.sTemperature = torch.flatten(sTemperature[:, :], start_dim=0, end_dim=1)
+        self.lonlat = torch.flatten(lonlat[:, :, :], start_dim=0, end_dim=1)
+        self.simulation_time = torch.flatten(simulation_time[:, :], start_dim=0, end_dim=1)
 
     def test_train_split(self, savepath, training_frac: float = 0.7, val_frac: float = 0.15):
         """
@@ -231,31 +227,46 @@ class DataProcesser:
         inputs = self.inputs
         aux_inputs = self.aux_inputs
         targets = self.targets
-        altitudeh = self.altitudeh
+        cosz = self.cosz
+        sTemperature = self.sTemperature
+        lonlat = self.lonlat
+        simulation_time = self.simulation_time
 
         # Randomly shuffle batches
         torch.manual_seed(42)
         shuffle_ix = torch.randperm(inputs.size()[0])
         inputs = inputs[shuffle_ix, :, :]
         targets = targets[shuffle_ix, :, :]
-        altitudeh = altitudeh[shuffle_ix, :]
+        cosz = cosz[shuffle_ix]
+        sTemperature = sTemperature[shuffle_ix]
+        lonlat = lonlat[shuffle_ix, :]
+        simulation_time = simulation_time[shuffle_ix]
 
-        train_x, train_y, train_altitudeh = (
+        train_x, train_y, train_cosz, train_sTemperature, train_lonlat, train_simulation_time = (
             inputs[:num_train_examples, :, :],
             targets[:num_train_examples, :, :],
-            altitudeh[:num_train_examples, :],
+            cosz[:num_train_examples],
+            sTemperature[:num_train_examples],
+            lonlat[:num_train_examples, :],
+            simulation_time[:num_train_examples]
         )
 
-        val_x, val_y, val_altitudeh = (
+        val_x, val_y, val_cosz, val_sTemperature, val_lonlat, val_simulation_time = (
             inputs[num_train_examples : num_train_examples + num_val_examples, :, :],
             targets[num_train_examples : num_train_examples + num_val_examples, :, :],
-            altitudeh[num_train_examples : num_train_examples + num_val_examples, :],
+            cosz[num_train_examples : num_train_examples + num_val_examples],
+            sTemperature[num_train_examples : num_train_examples + num_val_examples],
+            lonlat[num_train_examples : num_train_examples + num_val_examples, :],
+            simulation_time[num_train_examples : num_train_examples + num_val_examples]
         )
 
-        test_x, test_y, test_altitudeh = (
+        test_x, test_y, test_cosz, test_sTemperature, test_lonlat, test_simulation_time = (
             inputs[num_train_examples + num_val_examples :, :, :],
             targets[num_train_examples + num_val_examples :, :, :],
-            altitudeh[num_train_examples + num_val_examples :, :],
+            cosz[num_train_examples + num_val_examples :],
+            sTemperature[num_train_examples + num_val_examples :],
+            lonlat[num_train_examples + num_val_examples :, :],
+            simulation_time[num_train_examples + num_val_examples :]
         )
 
         with open(os.path.join(savepath, "train_x.pt"), "wb") as f:
@@ -276,6 +287,42 @@ class DataProcesser:
         with open(os.path.join(savepath, "val_y.pt"), "wb") as f:
             torch.save(val_y, f)
 
+        with open(os.path.join(savepath, "train_cosz.pt"), "wb") as f:
+            torch.save(train_cosz, f)
+
+        with open(os.path.join(savepath, "test_cosz.pt"), "wb") as f:
+            torch.save(test_cosz, f)
+
+        with open(os.path.join(savepath, "val_cosz.pt"), "wb") as f:
+            torch.save(val_cosz, f)
+
+        with open(os.path.join(savepath, "train_sTemperature.pt"), "wb") as f:
+            torch.save(train_sTemperature, f)
+
+        with open(os.path.join(savepath, "test_sTemperature.pt"), "wb") as f:
+            torch.save(test_sTemperature, f)
+
+        with open(os.path.join(savepath, "val_sTemperature.pt"), "wb") as f:
+            torch.save(val_sTemperature, f)
+
+        with open(os.path.join(savepath, "train_lonlat.pt"), "wb") as f:
+            torch.save(train_lonlat, f)
+        
+        with open(os.path.join(savepath, "test_lonlat.pt"), "wb") as f:
+            torch.save(test_lonlat, f)
+
+        with open(os.path.join(savepath, "val_lonlat.pt"), "wb") as f:
+            torch.save(val_lonlat, f)
+
+        with open(os.path.join(savepath, "train_simulation_time.pt"), "wb") as f:
+            torch.save(train_simulation_time, f)
+
+        with open(os.path.join(savepath, "test_simulation_time.pt"), "wb") as f:
+            torch.save(test_simulation_time, f)
+
+        with open(os.path.join(savepath, "val_simulation_time.pt"), "wb") as f:
+            torch.save(val_simulation_time, f)
+
         if type(aux_inputs) == Tensor:
             aux_inputs[shuffle_ix, :]
             train_aux_x = aux_inputs[:num_train_examples, :]
@@ -291,24 +338,16 @@ class DataProcesser:
             with open(os.path.join(savepath, "val_aux_x.pt"), "wb") as f:
                 torch.save(val_aux_x, f)
 
-        with open(os.path.join(savepath, "train_altitudeh.pt"), "wb") as f:
-            torch.save(train_altitudeh, f)
-
-        with open(os.path.join(savepath, "test_altitudeh.pt"), "wb") as f:
-            torch.save(test_altitudeh, f)
-
-        with open(os.path.join(savepath, "val_altitudeh.pt"), "wb") as f:
-            torch.save(val_altitudeh, f)
-
     def process(self):
         print("=============LOADING DATA=============")
 
-        data, grid = self.load_data(self.datapath)
+        raw_data_path = os.path.join(self.datapath, "raw_data")
+        data, grid = self.load_data(raw_data_path)
 
         print("============PROCESSING DATA===========")
         self.format_data(data, grid)
 
-        formatted_data_path = os.path.join(self.datapath, "rnn_lw")
+        formatted_data_path = os.path.join(self.datapath, "preprocessed_data", "rnn_lw", "dynamical")
         if not os.path.exists(formatted_data_path):
             os.makedirs(formatted_data_path)
 
