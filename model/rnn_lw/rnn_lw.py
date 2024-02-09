@@ -43,42 +43,33 @@ if gpus:
 ############################# INPUT DATA #############################
 
 TIME = time.time()
-DATAPATH = os.path.join(DATAPATH, "rnn_lw")
 datapath = DATAPATH
-print(datapath, flush=True)
+print("datapath: ", datapath, flush=True)
 CHECKPOINT_PATH = os.path.join(
-    DATAPATH, f"checkpoints-{TIME}", "{epoch:02d}-{val_loss:.2f}/checkpoint.model.keras"
+    CHECKPOINT_PATH, f"checkpoints-{TIME}", "{epoch:02d}-{val_loss:.2f}/checkpoint.model.keras"
 )
 checkpoint_path = CHECKPOINT_PATH
 
 train_x, train_y, val_x, val_y = load_input_data(datapath=datapath)
 print("train_x.shape: ", train_x.shape)
 train_aux_x, val_aux_x = load_aux_data(datapath=datapath)
-with open(os.path.join(datapath, "train_altitudeh.pt"), "rb") as f:
-    train_altitudeh = torch.load(f)
-with open(os.path.join(datapath, "val_altitudeh.pt"), "rb") as f:
-    val_altitudeh = torch.load(f)
 
 (
     train_x,
     train_aux_x,
     train_y,
-    train_altitudeh,
     val_x,
     val_y,
-    val_aux_x,
-    val_altitudeh,
+    val_aux_x
 ) = [
     convert_pt_to_tf_tensor(tens)
     for tens in (
         train_x,
         train_aux_x,
         train_y,
-        train_altitudeh,
         val_x,
         val_y,
-        val_aux_x,
-        val_altitudeh,
+        val_aux_x
     )
 ]
 
@@ -87,12 +78,14 @@ nlay = train_x.shape[1]
 nlev = nlay + 1
 noutputvar = train_y.shape[-1]  # Should be 2 for up and down flux, shortwave only
 n_aux_var = train_aux_x.shape[-1]
-print("NVAR: ", nvar)
+print("Number of input variables: ", nvar, flush=True)
+print("Number of layers: ", nlay, flush=True)
+print("Number of output variables: ", noutputvar, flush=True)
+print("Number of auxiliary variables: ", n_aux_var, flush=True)
 
 inputs = Input(shape=(nlay, nvar), name="inputs_main")
 aux_inputs = Input(shape=(n_aux_var), name="inputs_aux")
 targets = Input(shape=(nlev, noutputvar), name="targets")
-altitudeh = Input(shape=(nlev), name="altitudeh")
 
 ########################### INPUT VARIABLES ##########################
 
@@ -107,14 +100,13 @@ epochs = EPOCHS
 patience = PATIENCE
 batch_size = BATCH_SIZE
 
-# num_neurons = NUM_NEURONS
 base_lr = BASE_LR
 max_lr = MAX_LR
 
 alpha = float(sys.argv[1])
 third_rnn = bool(int(sys.argv[2])) # THIRD_RNN
 num_neurons = int(sys.argv[3])
-
+print("====================Hyperparameters====================")
 print("Alpha: ", alpha)
 print("third_rnn: ", third_rnn)
 print("num_neurons: ", num_neurons)
@@ -122,6 +114,7 @@ print("base_lr: ", base_lr)
 print("max_lr: ", max_lr)
 print("batch_size: ", batch_size)
 print("patience: ", patience)
+print("=======================================================")
 
 steps_per_epoch = train_x.shape[0] // batch_size
 
@@ -183,21 +176,11 @@ else:
         layers.Dense(noutputvar, activation=activ_output), name="dense_output"
     )(BIRNN_outputs)
 
-model = Model(inputs=[inputs, aux_inputs, targets, altitudeh], outputs=outputs)
+model = Model(inputs=[inputs, aux_inputs, targets], outputs=outputs)
 
 model.add_loss(custom_loss(y_true=targets, y_pred=outputs, alpha=alpha))
 model.add_metric(rmse_flux(y_true=targets, y_pred=outputs), name="rmse_flux")
-model.add_metric(
-    rmse_derivative(y_true=targets, y_pred=outputs), name="rmse_derivative"
-)
-model.add_metric(
-    norm0_dif(y_true=targets, y_pred=outputs), name="norm0_dif"
-)
-model.add_metric(
-    norm1_dif(y_true=targets, y_pred=outputs), name="norm1_dif"
-)
-model.add_metric(flux_up(y_true=targets, y_pred=outputs), name="flux_up")
-model.add_metric(flux_down(y_true=targets, y_pred=outputs), name="flux_down")
+model.add_metric(rmse_derivative(y_true=targets, y_pred=outputs), name="rmse_derivative")
 model.compile(
     optimizer=optim,
     metrics=[
@@ -227,8 +210,7 @@ history = model.fit(
     x=[
         train_x,
         train_aux_x,
-        train_y,
-        train_altitudeh,
+        train_y
     ],
     y=train_y,
     epochs=epochs,
@@ -236,6 +218,6 @@ history = model.fit(
     steps_per_epoch=train_x.shape[0] // batch_size,
     shuffle=True,
     verbose=1,
-    validation_data=([val_x, val_aux_x, val_y, val_altitudeh], val_y),
+    validation_data=([val_x, val_aux_x, val_y], val_y),
     callbacks=callbacks,
 )

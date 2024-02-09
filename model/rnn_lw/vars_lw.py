@@ -4,7 +4,8 @@ File to keep track of all variables.
 
 ############################ TRAINING DATA #############################
 
-DATAPATH = "/home/ucaptp0/oasis-rt-surrogate/all_data"
+DATAPATH = "/home/ucaptp0/oasis-rt-surrogate/data/preprocessed_data/rnn_lw/dynamical"
+CHECKPOINT_PATH = "/home/ucaptp0/oasis-rt-surrogate/checkpoints/rnn_lw/dynamical"
 
 INPUT_VARS = [
     "Rho",
@@ -19,10 +20,6 @@ TARGET_VARS = [
     "fnet_up_lw_h",
 ]
 
-########################## MODEL ARCHITECTURE #########################
-
-THIRD_RNN = True
-
 ############################ MODEL TRAINING ###########################
 
 # Activation Functions
@@ -32,7 +29,7 @@ activ_RNN2 = "relu"
 activ_RNN3 = "relu"
 activ_output = "sigmoid"
 
-EPOCHS = 100
+EPOCHS = 100 # 100 
 PATIENCE = 25
 BATCH_SIZE = 4096 #128
 
