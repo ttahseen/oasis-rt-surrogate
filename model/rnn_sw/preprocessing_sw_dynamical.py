@@ -149,6 +149,8 @@ class DataProcesser:
         auxiliary_data = np.empty(shape=(nt, ncol, nauxvars))
         target_data = np.empty(shape=(nt, ncol, nlev, ntargets))
         cosz = np.empty(shape=(nt, ncol))
+        simulation_time = np.empty(shape=(nt, ncol))
+        lonlat = np.empty(shape=(nt, ncol, 2))
 
         # Populate numpy array with data
         for t in range(len(timesteps)):
@@ -168,26 +170,42 @@ class DataProcesser:
                 target_data[t, :, :, tv] = np.reshape(dt[tvar], newshape=(ncol, nlev))
 
             cosz[t, :] = np.reshape(dt["cosz"], newshape=(ncol,))
+            simulation_time[t, :] = np.full(ncol, dt["simulation_time"])
+            lonlat[t, :, :] = np.reshape(grid['lonlat'], newshape=(ncol, 2))
 
         if resample_data:
-            # TODO: Replace this code with more robust sampling method
-            new_input_data = np.zeros(shape=(nt, 5000, nlay, nvars))
-            new_auxiliary_data = np.empty(shape=(nt, 5000, nauxvars))
-            new_target_data = np.empty(shape=(nt, 5000, nlev, ntargets))
-            new_cosz = np.empty(shape=(nt, 5000))
+            num_non_zero_cols =  np.count_nonzero(cosz[0, :], axis=1)
+            print("Initial number of columns with non-zero cosz: ", num_non_zero_cols, flush=True)
             for t in range(nt):
-                nonzero_indices = np.where(cosz[t, :] != 0)[0][:5000]
+                num_non_zero_cols_t = np.count_nonzero(cosz[t, :], axis=0)
+                if num_non_zero_cols_t < num_non_zero_cols:
+                    num_non_zero_cols = num_non_zero_cols_t
+
+            print(f"Final number of columns with non-zero cosz: {num_non_zero_cols}", flush=True)
+
+            # TODO: Replace this code with more robust sampling method
+            new_input_data = np.zeros(shape=(nt, num_non_zero_cols, nlay, nvars))
+            new_auxiliary_data = np.empty(shape=(nt, num_non_zero_cols, nauxvars))
+            new_target_data = np.empty(shape=(nt, num_non_zero_cols, nlev, ntargets))
+            new_cosz = np.empty(shape=(nt, num_non_zero_cols))
+            new_lonlat = np.empty(shape=(nt, num_non_zero_cols, 2))
+
+            for t in range(nt):
+                nonzero_indices = np.where(cosz[t, :] != 0)[0][:num_non_zero_cols]
                 indices = nonzero_indices
 
                 new_input_data[t, :, :, :] = input_data[t, indices, :, :]
                 new_auxiliary_data[t, :, :] = auxiliary_data[t, indices, :]
                 new_target_data[t, :, :, :] = target_data[t, indices, :, :]
                 new_cosz[t, :] = cosz[t, indices]
+                new_lonlat[t, :, :] = lonlat[t, indices, :]
 
             input_data = new_input_data
             auxiliary_data = new_auxiliary_data
             target_data = new_target_data
             cosz = new_cosz
+            lonlat = new_lonlat
+            simulation_time = simulation_time[:, :num_non_zero_cols]
 
         # Rescale inputs
         for v, var in enumerate(input_vars):
@@ -207,14 +225,17 @@ class DataProcesser:
         auxiliary_data = np.delete(arr=auxiliary_data, obj=gap_start, axis=0)
         target_data = np.delete(arr=target_data, obj=gap_start, axis=0)
 
-        input_data, auxiliary_data, target_data = [
+        input_data, auxiliary_data, target_data, cosz, lonlat, simulation_time = [
             torch.from_numpy(dataset).type(torch.float)
-            for dataset in (input_data, auxiliary_data, target_data)
+            for dataset in (input_data, auxiliary_data, target_data, cosz, lonlat, simulation_time)
         ]
 
         self.inputs = torch.flatten(input_data[:, :, :, :], start_dim=0, end_dim=1)
         self.aux_inputs = torch.flatten(auxiliary_data[:, :, :], start_dim=0, end_dim=1)
         self.targets = torch.flatten(target_data[:, :, :, :], start_dim=0, end_dim=1)
+        self.cosz = torch.flatten(cosz[:, :], start_dim=0, end_dim=1)
+        self.lonlat = torch.flatten(lonlat[:, :, :], start_dim=0, end_dim=1)
+        self.simulation_time = torch.flatten(simulation_time[:, :], start_dim=0, end_dim=0)
 
     def test_train_split(self, savepath, training_frac: float = 0.7, val_frac: float = 0.15):
         """
@@ -237,26 +258,41 @@ class DataProcesser:
         inputs = self.inputs
         aux_inputs = self.aux_inputs
         targets = self.targets
+        cosz = self.cosz
+        lonlat = self.lonlat
+        simulation_time = self.simulation_time
 
         # Randomly shuffle batches
         torch.manual_seed(42)
         shuffle_ix = torch.randperm(inputs.size()[0])
         inputs = inputs[shuffle_ix, :, :]
         targets = targets[shuffle_ix, :, :]
+        cosz = cosz[shuffle_ix]
+        lonlat = lonlat[shuffle_ix, :]
+        simulation_time = simulation_time[shuffle_ix]
 
-        train_x, train_y = (
+        train_x, train_y, train_cosz, train_lonlat, train_simulation_time = (
             inputs[:num_train_examples, :, :],
-            targets[:num_train_examples, :, :]
+            targets[:num_train_examples, :, :],
+            cosz[:num_train_examples],
+            lonlat[:num_train_examples, :],
+            simulation_time[:num_train_examples]
         )
 
-        val_x, val_y = (
+        val_x, val_y, val_cosz, val_lonlat, val_simulation_time = (
             inputs[num_train_examples : num_train_examples + num_val_examples, :, :],
-            targets[num_train_examples : num_train_examples + num_val_examples, :, :]
+            targets[num_train_examples : num_train_examples + num_val_examples, :, :],
+            cosz[num_train_examples : num_train_examples + num_val_examples],
+            lonlat[num_train_examples : num_train_examples + num_val_examples, :],
+            simulation_time[num_train_examples : num_train_examples + num_val_examples]
         )
 
-        test_x, test_y = (
+        test_x, test_y, test_cosz, test_lonlat, test_simulation_time = (
             inputs[num_train_examples + num_val_examples :, :, :],
-            targets[num_train_examples + num_val_examples :, :, :]
+            targets[num_train_examples + num_val_examples :, :, :],
+            cosz[num_train_examples + num_val_examples :],
+            lonlat[num_train_examples + num_val_examples :, :],
+            simulation_time[num_train_examples + num_val_examples :]
         )
 
         with open(os.path.join(savepath, "train_x.pt"), "wb") as f:
@@ -276,6 +312,33 @@ class DataProcesser:
 
         with open(os.path.join(savepath, "val_y.pt"), "wb") as f:
             torch.save(val_y, f)
+
+        with open(os.path.join(savepath, "train_cosz.pt"), "wb") as f:
+            torch.save(train_cosz, f)
+
+        with open(os.path.join(savepath, "test_cosz.pt"), "wb") as f:
+            torch.save(test_cosz, f)
+
+        with open(os.path.join(savepath, "val_cosz.pt"), "wb") as f:
+            torch.save(val_cosz, f)
+
+        with open(os.path.join(savepath, "train_lonlat.pt"), "wb") as f:
+            torch.save(train_lonlat, f)
+        
+        with open(os.path.join(savepath, "test_lonlat.pt"), "wb") as f:
+            torch.save(test_lonlat, f)
+
+        with open(os.path.join(savepath, "val_lonlat.pt"), "wb") as f:
+            torch.save(val_lonlat, f)
+
+        with open(os.path.join(savepath, "train_simulation_time.pt"), "wb") as f:
+            torch.save(train_simulation_time, f)
+
+        with open(os.path.join(savepath, "test_simulation_time.pt"), "wb") as f:
+            torch.save(test_simulation_time, f)
+
+        with open(os.path.join(savepath, "val_simulation_time.pt"), "wb") as f:
+            torch.save(val_simulation_time, f)
 
         if type(aux_inputs) == Tensor:
             aux_inputs[shuffle_ix, :]
