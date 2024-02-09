@@ -26,8 +26,7 @@ class DataProcesser:
         self.aux_vars_used = None
 
         # Load flux scale factor 
-        flux_scale_factor = np.loadtxt(os.path.join(datapath, "constants", 'flux_scale_factor.txt'))
-        self.flux_scale_factor = float(flux_scale_factor)
+        flux_scale_factors = np.loadtxt(os.path.join(datapath, "constants", 'sw_flux_scaling_factors.txt'), unpack=True)
 
     @staticmethod
     def log_scaling(x: np.ndarray) -> np.ndarray:
@@ -174,10 +173,10 @@ class DataProcesser:
             lonlat[t, :, :] = np.reshape(grid['lonlat'], newshape=(ncol, 2))
 
         if resample_data:
-            num_non_zero_cols =  np.count_nonzero(cosz[0, :], axis=1)
+            num_non_zero_cols =  np.count_nonzero(cosz[0, :])
             print("Initial number of columns with non-zero cosz: ", num_non_zero_cols, flush=True)
             for t in range(nt):
-                num_non_zero_cols_t = np.count_nonzero(cosz[t, :], axis=0)
+                num_non_zero_cols_t = np.count_nonzero(cosz[t, :])
                 if num_non_zero_cols_t < num_non_zero_cols:
                     num_non_zero_cols = num_non_zero_cols_t
 
@@ -215,7 +214,7 @@ class DataProcesser:
                 input_data[:, :, :, v] = DataProcesser.power_law_scaling(input_data[:, :, :, v], 0.25)
 
         # Rescale targets
-        tvar_scaling = self.flux_scale_factor * cosz[:, :, np.newaxis, np.newaxis]
+        tvar_scaling = self.flux_scale_factors[0] * cosz[:, :, np.newaxis, np.newaxis] + self.flux_scale_factors[1]
         target_data[:, :, :, :] = target_data[:, :, :, :] / tvar_scaling
         target_data = np.nan_to_num(
             target_data
@@ -235,7 +234,7 @@ class DataProcesser:
         self.targets = torch.flatten(target_data[:, :, :, :], start_dim=0, end_dim=1)
         self.cosz = torch.flatten(cosz[:, :], start_dim=0, end_dim=1)
         self.lonlat = torch.flatten(lonlat[:, :, :], start_dim=0, end_dim=1)
-        self.simulation_time = torch.flatten(simulation_time[:, :], start_dim=0, end_dim=0)
+        self.simulation_time = torch.flatten(simulation_time[:, :], start_dim=0, end_dim=1)
 
     def test_train_split(self, savepath, training_frac: float = 0.7, val_frac: float = 0.15):
         """
