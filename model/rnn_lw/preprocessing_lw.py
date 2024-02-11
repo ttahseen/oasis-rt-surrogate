@@ -6,6 +6,7 @@ format ready for model training.
 import os
 import sys
 import h5py
+import json
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -22,6 +23,9 @@ class DataProcesser:
         self.aux_vars = aux_vars  # Auxiliary vars which are not of same dimension as input vars
         self.input_vars = input_vars  # Variables which will be main inputs to model
         self.target_vars = target_vars  # Variables which will be outputs of model
+        self.custom_aux_vars = aux_vars
+        self.default_aux_vars = ["scaled_sTemperature", "scaled_sPressure", "scaled_sRho"]
+        self.all_aux_vars =  self.custom_aux_vars + self.default_aux_vars
         self.vars_used = None
         self.aux_vars_used = None
 
@@ -36,6 +40,14 @@ class DataProcesser:
     @staticmethod
     def power_law_scaling(x: np.ndarray, k: float) -> np.ndarray:
         return x**k
+
+    @staticmethod
+    def standard_scaling(x: np.ndarray) -> np.ndarray:
+        vals = {
+            "min": x.min(),
+            "max": x.max(),
+        }
+        return (x - x.min()) / (x.max() - x.min()), vals
 
     @staticmethod
     def extract_data(filepath: str) -> dict:
@@ -111,7 +123,9 @@ class DataProcesser:
             print(v)
 
         input_vars = self.input_vars
-        aux_vars = self.aux_vars
+        custom_aux_vars = self.custom_aux_vars
+        default_aux_vars = self.default_aux_vars
+        all_aux_vars = self.all_aux_vars
         target_vars = self.target_vars
 
         nt = len(data)  # Number of timesteps
@@ -119,7 +133,7 @@ class DataProcesser:
         nlay = nlev - 1
         ncol = 10242  # Number of atmospheric columns
         nvars = len(input_vars)  # Number of physical variables per atmospheric cell
-        nauxvars = len(aux_vars)
+        nauxvars = len(all_aux_vars)
         ntargets = len(target_vars)
 
         print(f"Number of timesteps: {nt}", flush=True)
@@ -127,7 +141,7 @@ class DataProcesser:
         print(f"Number of atmospheric layers: {nlay}", flush=True)
         print(f"Number of atmospheric columns: {ncol}", flush=True)
         print(f"Number of physical variables: {nvars}. These are: {input_vars}", flush=True)
-        print(f"Number of surface variables: {nauxvars}. These are: {aux_vars}", flush=True)
+        print(f"Number of surface variables: {nauxvars}. These are: {all_aux_vars}", flush=True)
         print(f"Number of target variables: {ntargets}. These are: {target_vars}", flush=True)
 
         # Handling data from non-consecutive timesteps
@@ -142,7 +156,7 @@ class DataProcesser:
                 npairs += 1
         # Check if there are non-consecutive timesteps
         if len(gap_start) > 0:
-            print(f"Non-consecutive timesteps found: {gap_start}", flush=True)
+            raise ValueError("Non-consecutive timesteps found")
 
         # Initialise numpy array
         input_data = np.zeros(shape=(nt, ncol, nlay, nvars))
@@ -150,6 +164,8 @@ class DataProcesser:
         target_data = np.empty(shape=(nt, ncol, nlev, ntargets))
         cosz = np.empty(shape=(nt, ncol))
         sTemperature = np.empty(shape=(nt, ncol))
+        sPressure = np.empty(shape=(nt, ncol))
+        sRho = np.empty(shape=(nt, ncol))
         simulation_time = np.empty(shape=(nt, ncol))
         lonlat = np.empty(shape=(nt, ncol, 2))
 
@@ -158,7 +174,7 @@ class DataProcesser:
 
             dt = data[timesteps[t]]
 
-            for av, avar in enumerate(aux_vars):
+            for av, avar in enumerate(custom_aux_vars):
                 auxiliary_data[t, :, av] = dt[avar]
 
             for v, var in enumerate(input_vars):
@@ -172,15 +188,35 @@ class DataProcesser:
 
             cosz[t, :] = np.reshape(dt["cosz"], newshape=(ncol,))
             sTemperature[t, :] = np.reshape(dt["sTemperature"], newshape=(ncol,))
+            sPressure[t, :] = np.reshape(dt["Pressure"], newshape=(ncol, nlay))[:, 0]
+            sRho[t, :] = np.reshape(dt["Rho"], newshape=(ncol, nlay))[:, 0]
             simulation_time[t, :] = np.full(ncol, dt["simulation_time"])
             lonlat[t, :, :] = np.reshape(grid['lonlat'], newshape=(ncol, 2))
 
+        # Standard scaling of surface variables:
+        scaled_sTemperature, vals_sTemperature = DataProcesser.standard_scaling(sTemperature)
+        scaled_sRho, vals_sRho = DataProcesser.standard_scaling(sRho)
+        scaled_sPressure, vals_sPressure = DataProcesser.standard_scaling(sPressure)
+
+        # Populate rest of aux vars
+        auxiliary_data[:, :, -1] = scaled_sTemperature
+        auxiliary_data[:, :, -2] = scaled_sPressure
+        auxiliary_data[:, :, -3] = scaled_sRho
+
+        # Save scaling values in one
+        scalings_dict = {"sTemperature": vals_sTemperature, "sPressure": vals_sPressure, "sRho": vals_sRho}
+        # Save scalings_dict to file
+        with open(os.path.join(self.datapath, "constants", "lw_surface_scaling_values.txt"), "w") as file:
+            file.write(json.dumps(scalings_dict))
+        
         # Rescale inputs
         for v, var in enumerate(input_vars):
-            if var in ["Temperature", "Pressure"]:
-                input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v])
+            if var == "Temperature":
+                input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v]) / DataProcesser.log_scaling(sTemperature[:, None])
+            elif var == "Pressure":
+                input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v]) / DataProcesser.log_scaling(sPressure[:, None])
             elif var == "Rho":
-                input_data[:, :, :, v] = DataProcesser.power_law_scaling(input_data[:, :, :, v], 0.25)
+                input_data[:, :, :, v] = DataProcesser.power_law_scaling(input_data[:, :, :, v], 0.25) / DataProcesser.power_law_scaling(sRho[:, None], 0.25)
 
         # Rescale targets
         tvar_scaling = self.flux_scale_factors[0] * sTemperature[:, :, np.newaxis, np.newaxis] + self.flux_scale_factors[1]
