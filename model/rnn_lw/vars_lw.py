@@ -13,7 +13,7 @@ INPUT_VARS = [
     "Pressure",
 ]
 
-AUX_VARS = ["sTemperature", "alb_surf_lw"]
+AUX_VARS = ["alb_surf_lw"] # sTemperature is automatically included in preprocessing script
 
 TARGET_VARS = [
     "fnet_dn_lw_h",

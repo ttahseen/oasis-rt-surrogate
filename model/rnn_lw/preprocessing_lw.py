@@ -212,11 +212,11 @@ class DataProcesser:
         # Rescale inputs
         for v, var in enumerate(input_vars):
             if var == "Temperature":
-                input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v]) / DataProcesser.log_scaling(sTemperature[:, None])
+                input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v]) / DataProcesser.log_scaling(sTemperature[:, :, None])
             elif var == "Pressure":
-                input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v]) / DataProcesser.log_scaling(sPressure[:, None])
+                input_data[:, :, :, v] = DataProcesser.log_scaling(input_data[:, :, :, v]) / DataProcesser.log_scaling(sPressure[:, :, None])
             elif var == "Rho":
-                input_data[:, :, :, v] = DataProcesser.power_law_scaling(input_data[:, :, :, v], 0.25) / DataProcesser.power_law_scaling(sRho[:, None], 0.25)
+                input_data[:, :, :, v] = DataProcesser.power_law_scaling(input_data[:, :, :, v], 0.25) / DataProcesser.power_law_scaling(sRho[:, :, None], 0.25)
 
         # Rescale targets
         tvar_scaling = self.flux_scale_factors[0] * sTemperature[:, :, np.newaxis, np.newaxis] + self.flux_scale_factors[1]
