@@ -77,7 +77,5 @@ For non-Mac M1 users, replace `tensorflow-macos` and `tensorflow-metal` in `requ
 1. Alter the file `jobscripts/get_model_predictions.sh` with the Job IDs corresponding to trained models of interest.
 2. Run the command `sbatch jobscripts/run_container.sh get_model_predictions.sh` to output model predictions to `analysis/trained-models/predictions/` for models corresponding to the specified Job IDs.
 
-### Scoring models
-3. 
-
-### Plotting predictions
+### Scoring models & plotting predictions
+3. Run the command `sbatch jobscripts/run_container.sh score_models.sh` to output model scores to `analysis/trained-models/info/scores.json` and plots of predictions vs. true for specific samples to `analysis/trained-models/plots`.
