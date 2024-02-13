@@ -7,6 +7,7 @@ import torch
 import datetime
 import tensorflow as tf
 import tensorflow_addons as tfa
+import tensorflow.keras.backend as K
 from sys import platform
 from tensorflow import keras
 from sys import platform
@@ -170,3 +171,67 @@ def load_and_compile_model(model_path, base_lr=BASE_LR, max_lr=MAX_LR, steps_per
     
     model.compile(optimizer=optim)
     return model
+
+######################################## SCORING FUNCTIONS #########################################
+
+def err_flux(y_true, y_pred):
+
+    err_flux = K.mean(K.abs(y_true - y_pred), axis=1)
+
+    norm0 = K.mean(K.abs(y_true[:, :, 0]), axis=1)
+    norm1 = K.mean(K.abs(y_true[:, :, 1]), axis=1)
+
+    err_flux0 = err_flux[:, 0] / norm0
+    err_flux1 = err_flux[:, 1] / norm1
+    err_flux = err_flux0 + err_flux1
+    err_flux = tf.math.multiply(0.5, err_flux)
+
+    return err_flux0, err_flux1, err_flux
+
+def err_derivative(y_true, y_pred):
+
+    dif_true = y_true[:, :-1, :] - y_true[:, 1:, :]
+    dif_pred = y_pred[:, :-1, :] - y_pred[:, 1:, :]
+    err_dif = K.mean(K.abs(dif_true - dif_pred), axis=1)
+
+    norm0 = K.mean(K.abs(dif_true[:, :, 0]), axis=1)
+    norm1 = K.mean(K.abs(dif_true[:, :, 1]), axis=1)
+
+    err_dif0 = err_dif[:, 0] / norm0
+    err_dif1 = err_dif[:, 1] / norm1
+
+    err_dif = err_dif0 + err_dif1
+    err_dif = tf.math.multiply(0.5, err_dif)
+
+    return err_dif0, err_dif1, err_dif
+
+def rmse_flux(y_true, y_pred):
+
+    err_flux = K.sqrt(K.mean(K.square(y_true - y_pred), axis=1))
+
+    norm0 = K.sqrt(K.mean(K.square(y_true[:, :, 0]), axis=1))
+    norm1 = K.sqrt(K.mean(K.square(y_true[:, :, 1]), axis=1))
+
+    err_flux0 = err_flux[:, 0] / norm0
+    err_flux1 = err_flux[:, 1] / norm1
+    err_flux = err_flux0 + err_flux1
+    err_flux = tf.math.multiply(0.5, err_flux)
+
+    return err_flux0, err_flux1, err_flux
+
+def rmse_derivative(y_true, y_pred):
+
+    dif_true = y_true[:, :-1, :] - y_true[:, 1:, :]
+    dif_pred = y_pred[:, :-1, :] - y_pred[:, 1:, :]
+    err_dif = K.sqrt(K.mean(K.square(dif_true - dif_pred), axis=1))
+
+    norm0 = K.sqrt(K.mean(K.square(dif_true[:, :, 0]), axis=1))
+    norm1 = K.sqrt(K.mean(K.square(dif_true[:, :, 1]), axis=1))
+
+    err_dif0 = err_dif[:, 0] / norm0
+    err_dif1 = err_dif[:, 1] / norm1
+
+    err_dif = err_dif0 + err_dif1
+    err_dif = tf.math.multiply(0.5, err_dif)
+
+    return err_dif0, err_dif1, err_dif

@@ -3,7 +3,7 @@
 #requesting one node
 #SBATCH -N1
 #requesting 1 V100 GPU
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:v100:1
 #SBATCH --mail-user=ucaptp0@ucl.ac.uk
 #SBATCH --mail-type=ALL
 #SBATCH --mem=100G

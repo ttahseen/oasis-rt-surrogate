@@ -4,13 +4,14 @@ checkpoint files, loads the test data, and evaluates the model on the test data.
 saved to a file in a directory specified by the SAVEPATH variable.
 """
 
-import argparse
-import numpy as np
 import os
 import sys
 import time
+import json
 import torch
 import datetime
+import argparse
+import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
 from sys import platform
@@ -36,7 +37,7 @@ if gpus:
 
 ####################################################################################################
 
-SAVEPATH = os.path.join("/home/ucaptp0/oasis-rt-surrogate/analysis/trained-models/predictions")
+SAVEPATH = os.path.join("/home/ucaptp0/oasis-rt-surrogate/analysis/trained-models")
 
 ####################################################################################################
 
@@ -54,6 +55,14 @@ checkpoint_files, job_id_info = get_checkpoint_files_for_timestamps(timestamps_d
 
 print(checkpoint_files)
 print(job_id_info)
+
+# Save job_id_info to a file
+with open(os.path.join(SAVEPATH, "info", "job_id_info.json"), "w") as file:
+    file.write(json.dumps(job_id_info))
+
+# Save checkpoint_files to a file
+with open(os.path.join(SAVEPATH, "info", "checkpoint_files.json"), "w") as file:
+    file.write(json.dumps(checkpoint_files))
 
 for jid in job_ids:
     schema = job_id_info[jid][0]
@@ -80,5 +89,5 @@ for jid in job_ids:
     )
         
     # Save the predictions
-    with open(os.path.join(SAVEPATH, "predictions-{}.npy".format(jid)), "wb") as f:
+    with open(os.path.join(SAVEPATH, "predictions", "predictions-{}.npy".format(jid)), "wb") as f:
         np.save(f, preds)
