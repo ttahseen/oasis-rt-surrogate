@@ -60,12 +60,24 @@ For non-Mac M1 users, replace `tensorflow-macos` and `tensorflow-metal` in `requ
 (Training is run on GPU partition.)
 
 1. Change relevant paths in `/model/rnn_sw/vars_sw.py` and `/model/rnn_lw/vars_lw.py`
-2. Alter the input hyperparameters in `/jobscripts/rnn_lw_training.sh` and `/jobscripts/rnn_sw_dynamical_training.sh`
+2. Alter the input hyperparameters in `/jobscripts/rnn_lw_train.sh` and `/jobscripts/rnn_sw_dynamical_train.sh`
 3. Run the following commands in the remote terminal:
   ```
   # Train a model for the LW schema
-  sbatch jobscripts/run_container.sh rnn_lw_training.sh
+  sbatch jobscripts/run_container.sh rnn_lw_train.sh
 
   # Train a model for the SW schema for dynamical inputs (p, T, rho)
-  sbatch jobscripts/run_container.sh rnn_sw_dynamical_training.sh
+  sbatch jobscripts/run_container.sh rnn_sw_dynamical_train.sh
   ```
+
+## Evaluating a trained model
+(Evaluation requires the GPU partition.)
+
+### Getting model predictions
+1. Alter the file `jobscripts/get_model_predictions.sh` with the Job IDs corresponding to trained models of interest.
+2. Run the command `sbatch jobscripts/run_container.sh get_model_predictions.sh` to output model predictions to `analysis/trained-models/predictions/` for models corresponding to the specified Job IDs.
+
+### Scoring models
+3. 
+
+### Plotting predictions
