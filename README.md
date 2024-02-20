@@ -14,6 +14,7 @@ Shortwave (sw) and longwave (lw) regimes have been emulated separately, and emul
       - `dynamical`
       - `optical`
   - `rnn_lw`
+- `trained_models`: Contains trained models
 - `data`:
   - `raw_data`: Contains raw outputs of OASIS-RT and OASIS grid
   - `preprocessed_data`: Contains preprocessed data for both LW and SW schemas
@@ -27,6 +28,10 @@ Shortwave (sw) and longwave (lw) regimes have been emulated separately, and emul
   - `raw-data`: Contains Jupyter NBs for inspecting raw simulation output to inform data preprocessing
   - `preprocessed-data`: Contains Jupyter NBs for inspecting the preprocessed data to check it has been processed as intended
   - `trained-models`: Contains scripts for loading models from checkpoints, scoring these models on test data, and plotting examples of predictions
+    - `info`: Information on Job IDs, checkpoint files
+    - `plots`
+    - `predictions`
+    - `scores`
 
 ## Environment Set-Up Instructions
 These instructions are relevant to those with a Mac M1 processor.
@@ -79,3 +84,8 @@ For non-Mac M1 users, replace `tensorflow-macos` and `tensorflow-metal` in `requ
 
 ### Scoring models & plotting predictions
 3. Run the command `sbatch jobscripts/run_container.sh score_models.sh` to output model scores to `analysis/trained-models/info/scores.json` and plots of predictions vs. true for specific samples to `analysis/trained-models/plots`.
+
+## Running predictions using trained models
+
+1. Put raw `.h5` data files in `./data/raw_data`
+2. See `example.ipynb` for example on how to use main function in `main.py`.
