@@ -75,17 +75,17 @@ For non-Mac M1 users, replace `tensorflow-macos` and `tensorflow-metal` in `requ
   sbatch jobscripts/run_container.sh rnn_sw_dynamical_train.sh
   ```
 
-## Evaluating a trained model
+## Evaluating a trained model
 (Evaluation requires the GPU partition.)
 
-### Getting model predictions
+### Getting model predictions
 1. Alter the file `jobscripts/get_model_predictions.sh` with the Job IDs corresponding to trained models of interest.
 2. Run the command `sbatch jobscripts/run_container.sh get_model_predictions.sh` to output model predictions to `analysis/trained-models/predictions/` for models corresponding to the specified Job IDs.
 
-### Scoring models & plotting predictions
+### Scoring models & plotting predictions
 3. Run the command `sbatch jobscripts/run_container.sh score_models.sh` to output model scores to `analysis/trained-models/info/scores.json` and plots of predictions vs. true for specific samples to `analysis/trained-models/plots`.
 
-## Running predictions using trained models
+## Running predictions using trained models
 
 1. Put raw `.h5` data files in `./data/raw_data`
 2. See `example.ipynb` for example on how to use main function in `main.py`.
