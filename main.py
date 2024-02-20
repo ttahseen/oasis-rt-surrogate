@@ -1,6 +1,21 @@
 """
 This Python file ingests raw data, preprocesses it, loads the trained model, and then uses the model to make predictions.
 Predictions are then post-processed, and returned.
+
+Inputs:
+    - Pressure: shape (ncol*nlay,)
+    - Temperature: shape (ncol*nlay,)
+    - Rho: shape (ncol*nlay,)
+    - sTemperature: shape (ncol,)
+    - cosz: shape (ncol,)
+    - alb_surf_sw: shape (ncol,)
+    - alb_surf_lw: shape (ncol,)
+
+Returns:
+    - fnet_dn_sw_h: shape (ncol*nlev,)
+    - fnet_up_sw_h: shape (ncol*nlev,)
+    - fnet_dn_lw_h: shape (ncol*nlev,)
+    - fnet_up_lw_h: shape (ncol*nlev,)
 """
 
 import os
@@ -14,8 +29,8 @@ from tensorflow.keras import optimizers
 ################################################################################################################
 
 # Paths
-SW_MODEL_PATH = "/home/ucaptp0/oasis-rt-surrogate/trained_models/rnn_sw/dynamical/649968"
-LW_MODEL_PATH = "/home/ucaptp0/oasis-rt-surrogate/trained_models/rnn_lw/dynamical/649951"
+SW_MODEL_PATH = "./trained_models/rnn_sw/dynamical/649968"
+LW_MODEL_PATH = "./trained_models/rnn_lw/dynamical/649951"
 
 # Constants
 M_SW = 2.778805990703287989e+03
@@ -53,9 +68,9 @@ def standard_scaling(x: np.ndarray, xmin: float, xmax: float) -> np.ndarray:
 ################################################################################################################
 
 def preprocess_data(
-        pressure,
-        temperature,
-        rho,
+        Pressure,
+        Temperature,
+        Rho,
         sTemperature,
         cosz,
         alb_surf_sw,
@@ -71,9 +86,9 @@ def preprocess_data(
     Preprocesses raw data for use in the model.
 
     Args:
-    - pressure: shape (ncol, nlay)
-    - temperature: shape (ncol, nlay)
-    - rho: shape (ncol, nlay)
+    - Pressure: shape (ncol, nlay)
+    - Temperature: shape (ncol, nlay)
+    - Rho: shape (ncol, nlay)
     - sTemperature: shape (ncol,)
     - cosz: shape (ncol,)
     - alb_surf_sw: shape (ncol,)
@@ -88,22 +103,31 @@ def preprocess_data(
     lw_nauxvars = 4
 
     # Check shape of inputs
-    if not pressure.shape == temperature.shape == rho.shape:
-        raise ValueError("Pressure, temperature, and density arrays must have the same shape.")
+    if not Pressure.shape == Temperature.shape == Rho.shape:
+        raise ValueError("Pressure, Temperature, and Rho arrays must have the same shape.")
     if not sTemperature.shape == cosz.shape == alb_surf_sw.shape:
         raise ValueError("sTemperature, cosz, and alb_surf_sw arrays must have the same shape.")
-    if not pressure.shape == (ncol, nlay):
-        raise ValueError("Pressure, temperature, and density arrays must have shape (ncol, nlay).")
+    if not Pressure.shape == (ncol*nlay,):
+        raise ValueError("Pressure, Temperature, and Rho arrays must have shape (ncol*nlay,).")
     if not sTemperature.shape == (ncol,):
         raise ValueError("sTemperature, cosz, and alb_surf_sw arrays must have shape (ncol,).")
 
-    sPressure = np.copy(pressure[:, 0])
-    sRho = np.copy(rho[:, 0])
+    # Reshape inputs
+    Pressure = np.reshape(Pressure, newshape=(ncol, nlay))
+    Temperature = np.reshape(Temperature, newshape=(ncol, nlay))
+    Rho = np.reshape(Rho, newshape=(ncol, nlay))
+    sTemperature = np.reshape(sTemperature, newshape=(ncol,))
+    cosz = np.reshape(cosz, newshape=(ncol,))
+    alb_surf_sw = np.reshape(alb_surf_sw, newshape=(ncol,))
+    alb_surf_lw = np.reshape(alb_surf_lw, newshape=(ncol,))
+
+    sPressure = np.copy(Pressure[:, 0])
+    sRho = np.copy(Rho[:, 0])
 
     # Scale data
-    rho[:, :] = power_law_scaling(rho[:, :], 0.25) / power_law_scaling(sRho[:, None], 0.25)
-    temperature[:, :] = log_scaling(temperature[:, :]) / log_scaling(sTemperature[:, None])
-    pressure[:, :] = log_scaling(pressure[:, :]) / log_scaling(sPressure[:, None])
+    Rho[:, :] = power_law_scaling(Rho[:, :], 0.25) / power_law_scaling(sRho[:, None], 0.25)
+    Temperature[:, :] = log_scaling(Temperature[:, :]) / log_scaling(sTemperature[:, None])
+    Pressure[:, :] = log_scaling(Pressure[:, :]) / log_scaling(sPressure[:, None])
 
     # Scale sTemperature, sPressure, sRho
     # TODO: Replace this standard scaling with physically motivated scaling (and retrain model)
@@ -115,9 +139,9 @@ def preprocess_data(
     sw_inputs_aux = np.zeros(shape=(ncol, sw_nauxvars))
     lw_inputs_aux = np.zeros(shape=(ncol, lw_nauxvars))
 
-    inputs_main[:, :, 0] = rho[:, :]
-    inputs_main[:, :, 1] = temperature[:, :]
-    inputs_main[:, :, 2] = pressure[:, :]
+    inputs_main[:, :, 0] = Rho[:, :]
+    inputs_main[:, :, 1] = Temperature[:, :]
+    inputs_main[:, :, 2] = Pressure[:, :]
 
     sw_inputs_aux[:, 0] = cosz[:]
     sw_inputs_aux[:, 1] = alb_surf_sw[:]
@@ -179,12 +203,27 @@ def make_predictions(model, inputs_main, inputs_aux):
         x=[inputs_main, inputs_aux], verbose=1, batch_size=4096
     )
 
-def postprocess_predictions(predictions: np.ndarray, cosz: np.ndarray, m: float, c: float) -> np.ndarray:
-    # return x * (m*cosz + c)
-    # return np.multiply(predictions, np.repeat(m*cosz[:, None] + c, 2, axis=1)) # TODO: Check that repeat has been done along correct axis
-    return np.multiply(predictions, (m*cosz[:, None, None] + c))
+def postprocess_predictions(predictions: np.ndarray, arr: np.ndarray, m: float, c: float) -> np.ndarray:
+    return np.multiply(predictions, (m*arr[:, None, None] + c))
 
-def main(pressure, temperature, rho, sTemperature, cosz, alb_surf_sw, alb_surf_lw):
+def main(Pressure, Temperature, Rho, sTemperature, cosz, alb_surf_sw, alb_surf_lw):
+    """
+    Inputs:
+    - Pressure: shape (ncol*nlay,)
+    - Temperature: shape (ncol*nlay,)
+    - Rho: shape (ncol*nlay,)
+    - sTemperature: shape (ncol,)
+    - cosz: shape (ncol,)
+    - alb_surf_sw: shape (ncol,)
+    - alb_surf_lw: shape (ncol,)
+    
+    Returns:
+    - fnet_dn_sw_h: shape (ncol*nlev,)
+    - fnet_up_sw_h: shape (ncol*nlev,)
+    - fnet_dn_lw_h: shape (ncol*nlev,)
+    - fnet_up_lw_h: shape (ncol*nlev,)
+    """
+
     # Load the model
     sw_model_path = SW_MODEL_PATH
     lw_model_path = LW_MODEL_PATH
@@ -192,7 +231,7 @@ def main(pressure, temperature, rho, sTemperature, cosz, alb_surf_sw, alb_surf_l
     lw_model = load_and_compile_model(lw_model_path)
 
     # Preprocess input data
-    inputs_main, sw_inputs_aux, lw_inputs_aux = preprocess_data(pressure, temperature, rho, sTemperature, cosz, alb_surf_sw, alb_surf_lw)
+    inputs_main, sw_inputs_aux, lw_inputs_aux = preprocess_data(Pressure, Temperature, Rho, sTemperature, cosz, alb_surf_sw, alb_surf_lw)
 
     # Make predictions
     sw_predictions = make_predictions(sw_model, inputs_main, sw_inputs_aux)
@@ -202,7 +241,12 @@ def main(pressure, temperature, rho, sTemperature, cosz, alb_surf_sw, alb_surf_l
     sw_postprocessed_predictions = postprocess_predictions(sw_predictions, cosz, m=M_SW, c=C_SW)
     lw_postprocessed_predictions = postprocess_predictions(lw_predictions, sTemperature, m=M_LW, c=C_LW)
 
-    return sw_postprocessed_predictions, lw_postprocessed_predictions
+    fnet_dn_sw_h = np.ravel(sw_postprocessed_predictions[:, :, 0])
+    fnet_up_sw_h = np.ravel(sw_postprocessed_predictions[:, :, 1])
+    fnet_dn_lw_h = np.ravel(lw_postprocessed_predictions[:, :, 0])
+    fnet_up_lw_h = np.ravel(lw_postprocessed_predictions[:, :, 1])
+
+    return fnet_dn_sw_h, fnet_up_sw_h, fnet_dn_lw_h, fnet_up_lw_h
 
 if __name__ == "__main__":
     main()
