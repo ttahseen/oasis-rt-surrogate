@@ -1,5 +1,6 @@
 #include <assert.h>
 #include "onnxruntime_c_api.h"
+#include "data_file.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <vector>
@@ -39,12 +40,11 @@ int main() {
 
   // set numthreads
   ORT_ABORT_ON_ERROR(g_ort->SetIntraOpNumThreads(session_options, 1));
-  // 设置优化级别
   ORT_ABORT_ON_ERROR(g_ort->SetSessionGraphOptimizationLevel(session_options, ORT_ENABLE_BASIC));
 
   const char* model_path = "/home/ucaptp0/oasis-rt-surrogate/trained_models/onnx/rnn_sw/dynamical/649968_combined_inputs.onnx";
   printf("Using Onnxruntime C API\n");
-  // 创建一个session
+
   CheckStatus(g_ort->CreateSession(env, model_path, session_options, &session));
 
 
