@@ -89,3 +89,29 @@ For non-Mac M1 users, replace `tensorflow-macos` and `tensorflow-metal` in `requ
 
 1. Put raw `.h5` data files in `./data/raw_data`
 2. See `example.ipynb` for example on how to use main function in `main.py`.
+
+## Inference instructions
+These instructions are for making inference using SW model (.onnx format) in C++.
+
+### Versions
+```
+Linux compute-0-18.local 3.10.0-1160.49.1.el7.x86_64 #1 SMP Tue Nov 30 15:51:32 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux
+Python 3.10.12
+cmake version 3.27.2
+gcc (GCC) 10.1.0
+```
+
+### Onnxruntime installation steps
+```
+cd ~/oasis-rt-surrogate/inference
+git clone --recursive https://github.com/Microsoft/onnxruntime.git
+cd onnxruntime
+git checkout v1.10.0
+./build.sh --config Release  --build_shared_lib --parallel
+```
+
+### Compile and run inference
+```
+g++ inference.cpp -o inference -L/~/oasis-rt-surrogate/inference/onnxruntime/build/Linux/Release -lonnxruntime
+./inference
+```
