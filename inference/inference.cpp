@@ -50,6 +50,7 @@ int main() {
     
     
     size_t input_tensor_size = 54 * 3;
+    size_t output_tensor_size = 50 * 2;
     // float* input_tensor_values = new float[54 * 3]{0.5};
     
     H5Easy::File file("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_inputs.h5", H5Easy::File::ReadOnly);
@@ -77,13 +78,15 @@ int main() {
     OrtMemoryInfo* memory_info = nullptr;
     CheckStatus(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info));
     OrtValue *input_tensor = nullptr;
-    CheckStatus(g_ort->CreateTensorWithDataAsOrtValue(memory_info,
-                                                      input_tensor_values,
-                                                      model_input_len,
-                                                      input_shape,
-                                                      input_shape_len,
-                                                      ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
-                                                      &input_tensor));
+    CheckStatus(g_ort->CreateTensorWithDataAsOrtValue(
+        memory_info,
+        input_tensor_values,
+        model_input_len,
+        input_shape,
+        input_shape_len,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
+        &input_tensor
+    ));
     
     assert(input_tensor != NULL);
     int is_tensor;
@@ -94,19 +97,39 @@ int main() {
     
     printf("start to run onnxruntime\n");
     ORT_ABORT_ON_ERROR(g_ort->Run(
-        session,
-        nullptr,
-        input_names,
-        (const OrtValue* const*)&input_tensor,
-        1,
-        output_names,
-        1,
-        &output_tensor
+        session, // OrtSession *session
+        nullptr, // const OrtRunOptions *run_options
+        input_names, // const char *const *input_names
+        (const OrtValue* const*)&input_tensor, // const OrtValue *const *inputs
+        1, // size_t input_len,
+        output_names, // const char *const *output_names
+        1, // size_t output_names_len
+        &output_tensor // OrtValue **outputs
     ));
-    
+
     assert(output_tensor != NULL);
     printf("finish!!!");
     
+    float* output_tensor_data = new float[50 * 2];
+    ORT_ABORT_ON_ERROR(g_ort->GetTensorMutableData(output_tensor, (void**)&output_tensor_data));
+    size_t rows = 50;
+    size_t cols = 2;
+    std::vector<std::vector<double>> output_tensor_values(rows, std::vector<double>(cols));
+    
+    // Copy data from float* to vector of vectors
+    for (size_t i = 0; i < rows; ++i) {
+        for (size_t j = 0; j < cols; ++j) {
+            output_tensor_values[i][j] = static_cast<double>(output_tensor_data[i * cols + j]);
+        }
+    }
+    // std::vector<std::vector<double>> output_tensor_values = createOutputTensorValues(output_tensor_data, rows, cols);
+
+    // open a file
+    H5Easy::File file_output("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_output.h5", H5Easy::File::Overwrite);
+
+    // write dataset (automatically creates groups if needed)
+    H5Easy::dump(file_output, "/outputs", output_tensor_values);
+
     g_ort->ReleaseValue(output_tensor);
     g_ort->ReleaseValue(input_tensor);
     g_ort->ReleaseSession(session);
@@ -115,3 +138,6 @@ int main() {
     
     return 0;
 }
+
+
+
