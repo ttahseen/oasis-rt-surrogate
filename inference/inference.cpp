@@ -48,19 +48,16 @@ int main() {
     
     CheckStatus(g_ort->CreateSession(env, model_path, session_options, &session));
     
-    
+    // DEFINE SIZES OF MODEL INPUT AND MODEL OUTPUT TENSOR
     size_t input_tensor_size = 54 * 3;
     size_t output_tensor_size = 50 * 2;
-    // float* input_tensor_values = new float[54 * 3]{0.5};
     
-    H5Easy::File file("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_inputs.h5", H5Easy::File::ReadOnly);
-    // read from dataset
+    // LOAD EXAMPLE INPUTS FROM A SINGLE COLUMN
+    H5Easy::File file("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_inputs.h5", H5Easy::File::ReadOnly); // SPECIFY INPUTS FILE HERE 
     std::vector<std::vector<double>> input_vector = H5Easy::load<std::vector<std::vector<double>>>(file, "/inputs");
     
-    // float* input_tensor_values = new float[input_vector.size()];
+    // CHANGE FORMAT OF INPUTS
     float* input_tensor_values = new float[54 * 3];
-    
-    // Copy elements from the 2D vector into the float* array
     size_t index = 0;
     for (const std::vector<double>& row : input_vector) {
         for (const double& element : row) {
@@ -68,6 +65,7 @@ int main() {
         }
     }
     
+    // VARS RELATED TO MODEL INPUTS
     const char *input_names[] = {"input_8"};
     const char *output_names[] = { "dense_output" };
     const int64_t input_shape[] = {1, 54, 3};
@@ -75,6 +73,7 @@ int main() {
     const size_t input_shape_len = sizeof(input_shape) / sizeof(input_shape[0]);
     printf("The model_input length %zu\n", model_input_len);
     
+    // PUTTING MODEL INPUTS INTO AN ORTVALUE OBJECT
     OrtMemoryInfo* memory_info = nullptr;
     CheckStatus(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info));
     OrtValue *input_tensor = nullptr;
@@ -95,6 +94,8 @@ int main() {
     
     OrtValue* output_tensor = nullptr;
     
+
+    // RUNNING MODEL INFERENCE
     printf("start to run onnxruntime\n");
     ORT_ABORT_ON_ERROR(g_ort->Run(
         session, // OrtSession *session
@@ -110,24 +111,21 @@ int main() {
     assert(output_tensor != NULL);
     printf("finish!!!");
     
+
+    // PUTTING OUTPUT VALUES INTO A 2D VECTOR OF DOUBLES
     float* output_tensor_data = new float[50 * 2];
     ORT_ABORT_ON_ERROR(g_ort->GetTensorMutableData(output_tensor, (void**)&output_tensor_data));
     size_t rows = 50;
     size_t cols = 2;
     std::vector<std::vector<double>> output_tensor_values(rows, std::vector<double>(cols));
-    
-    // Copy data from float* to vector of vectors
     for (size_t i = 0; i < rows; ++i) {
         for (size_t j = 0; j < cols; ++j) {
             output_tensor_values[i][j] = static_cast<double>(output_tensor_data[i * cols + j]);
         }
     }
-    // std::vector<std::vector<double>> output_tensor_values = createOutputTensorValues(output_tensor_data, rows, cols);
 
-    // open a file
-    H5Easy::File file_output("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_output.h5", H5Easy::File::Overwrite);
-
-    // write dataset (automatically creates groups if needed)
+    // SAVING MODEL OUTPUTS AS .H5
+    H5Easy::File file_output("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_output.h5", H5Easy::File::Overwrite); // SPECIFY OUTPUT FILEPATH
     H5Easy::dump(file_output, "/outputs", output_tensor_values);
 
     g_ort->ReleaseValue(output_tensor);
