@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <vector>
+#include <iostream>
+#include <../include/highfive/H5Easy.hpp>
 
 const OrtApi* g_ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
 
@@ -49,7 +51,22 @@ int main() {
 
 
   size_t input_tensor_size = 54 * 3;
-  float *input_tensor_values = new float[54 * 3]{0.5};
+  // float* input_tensor_values = new float[54 * 3]{0.5};
+
+  H5Easy::File file("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_inputs.h5", H5Easy::File::ReadOnly);
+  // read from dataset
+  std::vector<std::vector<double>> input_vector = H5Easy::load<std::vector<std::vector<double>>>(file, "/inputs");
+
+  // float* input_tensor_values = new float[input_vector.size()];
+  float* input_tensor_values = new float[54 * 3];
+
+  // Copy elements from the 2D vector into the float* array
+  size_t index = 0;
+  for (const std::vector<double>& row : input_vector) {
+      for (const double& element : row) {
+          input_tensor_values[index++] = static_cast<float>(element);
+      }
+  }
 
   const char *input_names[] = {"input_8"};
   const char *output_names[] = { "dense_output" };
