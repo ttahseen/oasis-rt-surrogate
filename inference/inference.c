@@ -2,6 +2,7 @@
 #include "onnxruntime_c_api.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <hdf5.h>
 
 const OrtApi* g_ort = NULL;
 
@@ -27,12 +28,18 @@ void CheckStatus(OrtStatus* status) {
 
 int main() {
 
+    // hid_t file_id, dataset_id;
+    // float* input_tensor_array;
+    // file_id = H5Fopen("/home/ucaptp0/oasis-rt-surrogate/inference/data/sw_single_inputs.h5", H5F_ACC_RDONLY, H5P_DEFAULT);
+    // dataset_id = H5Dopen(file_id, "/inputs", H5P_DEFAULT);
+    // H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, input_tensor_array);
+  
     g_ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
     if (!g_ort) {
         fprintf(stderr, "Failed to init ONNX Runtime engine.\n");
         return -1;
     }
-    
+
     OrtEnv* env;
     OrtSession* session;
     
@@ -55,15 +62,14 @@ int main() {
     size_t output_tensor_size = 50 * 2;
     
     // CHANGE FORMAT OF INPUTS
-    // float* input_tensor_values = new float[54 * 3]{0.5};
     float* input_tensor_values = (float*)malloc(54 * 3 * sizeof(float));
     for (int i = 0; i < 54 * 3; ++i) {
         input_tensor_values[i] = 0.5;
     }
 
     // VARS RELATED TO MODEL INPUTS
-    const char* input_names[] = {"input_8"};
-    const char* output_names[] = { "dense_output" };
+    const char* input_names[] = {"input_8"}; // Names of the .onnx model inputs
+    const char* output_names[] = { "dense_output" }; // Names of the .onnx model outputs
     const int64_t input_shape[] = {1, 54, 3};
     const size_t model_input_len = input_tensor_size * sizeof(float);
     const size_t input_shape_len = sizeof(input_shape) / sizeof(input_shape[0]);
@@ -92,21 +98,22 @@ int main() {
     
 
     // RUNNING MODEL INFERENCE
-    printf("start to run onnxruntime\n");
+    printf("Starting Onnxruntime Inference\n");
     ORT_ABORT_ON_ERROR(g_ort->Run(
         session, // OrtSession *session
         NULL, // const OrtRunOptions *run_options
         input_names, // const char *const *input_names
         (const OrtValue* const*)&input_tensor, // const OrtValue *const *inputs
-        1, // size_t input_len,
+        1, // size_t input_len (number of model inputs)
         output_names, // const char *const *output_names
-        1, // size_t output_names_len
+        1, // size_t output_names_len (number of model outputs)
         &output_tensor // OrtValue **outputs
     ));
 
     assert(output_tensor != NULL);
-    printf("finish!!!");
+    printf("Inference complete");
     
+    // Extracting output values from OrtValue* output_tensor
     float* output_tensor_data = NULL;
     ORT_ABORT_ON_ERROR(g_ort->GetTensorMutableData(output_tensor, (void**)&output_tensor_data));
 
