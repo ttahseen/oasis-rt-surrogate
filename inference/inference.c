@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// const OrtApi* g_ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
 const OrtApi* g_ort = NULL;
 
 void CheckStatus(OrtStatus* status) {
@@ -27,11 +26,13 @@ void CheckStatus(OrtStatus* status) {
     } while (0);
 
 int main() {
+
     g_ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
     if (!g_ort) {
         fprintf(stderr, "Failed to init ONNX Runtime engine.\n");
         return -1;
     }
+    
     OrtEnv* env;
     OrtSession* session;
     
@@ -106,6 +107,9 @@ int main() {
     assert(output_tensor != NULL);
     printf("finish!!!");
     
+    float* output_tensor_data = NULL;
+    ORT_ABORT_ON_ERROR(g_ort->GetTensorMutableData(output_tensor, (void**)&output_tensor_data));
+
     g_ort->ReleaseValue(output_tensor);
     g_ort->ReleaseValue(input_tensor);
     g_ort->ReleaseSessionOptions(session_options);

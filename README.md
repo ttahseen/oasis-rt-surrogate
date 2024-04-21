@@ -112,6 +112,11 @@ git checkout v1.10.0
 
 ### Compile and run inference
 ```
-g++ inference.cpp -o inference -L/~/oasis-rt-surrogate/inference/onnxruntime/build/Linux/Release -lonnxruntime
+# C++
+gcc inference.cpp -I ../include/ -o inference -L/~/oasis-rt-surrogate/inference/onnxruntime/build/Linux/Release -lonnxruntime -std=c++11 -lstdc++ -lhdf5
+./inference
+
+# C
+gcc inference.c -I ../include/ -o inference -L/~/oasis-rt-surrogate/inference/onnxruntime/build/ease -lonnxruntime -lhdf5
 ./inference
 ```
