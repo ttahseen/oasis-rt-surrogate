@@ -32,6 +32,7 @@ Shortwave (sw) and longwave (lw) regimes have been emulated separately, and emul
     - `plots`
     - `predictions`
     - `scores`
+- `inference`: Contains code for executing surrogate model in C/C++
 - `elm_initial_experimentation`: Contains code for initial experimentation into an Extreme Learning Machine (ELM) based surrogate model.
 
 ## Environment Set-Up Instructions
