@@ -2,7 +2,7 @@
 
 ## About
 
-This repository contains code to generate a surrogate model for the Radiative Transfer component of the OASIS GCM, specifically for simulations of Venus.
+This repository contains code to generate a surrogate model for the Radiative Transfer component of the OASIS GCM, specifically for simulations of Venus. This work is published in [Tahseen et al 2024](https://doi.org/10.1093/mnras/stae2461).
 Shortwave (sw) and longwave (lw) regimes have been emulated separately, and emulators have been created on two levels:
   1. Emulating the entire schema: inputs = dynamical inputs (P, T, $\rho$)
   2. Emulating the second step of the RT computation: inputs = optical inputs ($\tau_{ext}$, $\tau_{ray}$, $\tau$) 
