@@ -32,6 +32,7 @@ Shortwave (sw) and longwave (lw) regimes have been emulated separately, and emul
     - `plots`
     - `predictions`
     - `scores`
+  - `elm_initial_experimentation`: Contains code for initial experimentation into an Extreme Learning Machine (ELM) based surrogate model.
 
 ## Environment Set-Up Instructions
 These instructions are relevant to those with a Mac M1 processor.
